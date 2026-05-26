@@ -1,0 +1,17 @@
+{
+  "name": "sxf-pci",
+  "description": "SXF PCI 合规技能包：提供 PCI 密钥轮换迁移（SM 加密字段 → HMAC-SHA256 hash 列）的完整作业指导，覆盖调研、分支策略、依赖升级、兼容写入和等值查询切换全流程。",
+  "version": "1.0.0",
+  "author": {
+    "name": "Mr.HayesLin"
+  },
+  "keywords": [
+    "pci",
+    "sm4",
+    "hmac",
+    "hash",
+    "migration",
+    "encryption",
+    "sxf"
+  ]
+}
