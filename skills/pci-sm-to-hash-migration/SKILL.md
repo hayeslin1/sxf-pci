@@ -110,9 +110,30 @@ grep -rEn '\.contains\s*\(\s*\w+\.get\w+Sm\(\)\s*\)' --include='*.java' -- <repo
 
 # 3. 找 SQL 中以 _sm 字段做条件的语句（等值 / IN / LIKE）
 grep -rEn '(?i)(and|where|on)\s+\w*\.?\w+_sm\s*(=|in|like)' --include='*.xml' -- <repo>
+
+# 4. 找通过 BeanUtils.copyProperties 写入 _sm 字段的路径
+#    BeanUtils.copyProperties(src, dest) 会把 src 中所有 xxxSm getter 的值批量 copy 到 dest，
+#    不会出现显式的 setXxxSm，因此需要单独搜索
+#    策略：找到调用 BeanUtils.copyProperties 且 dest 的类型包含 _sm 字段的地方
+grep -rEn 'BeanUtils\.copyProperties' --include='*.java' -- <repo>
+#    结果需人工逐一确认：dest 对象的类型是否包含 xxx_sm 字段（即 xxxSm getter/setter）
+#    若包含则该调用点视为 _sm 字段的写入路径，必须纳入 P4.4 的补 hash 改造范围
 ```
 
 **人工兜底**：上述 grep 只能覆盖常见模式，**必须**再人工通读 P1 清单里每个 `_sm` 字段所在 PO 的 `getXxxSm()` 调用链（IDE Find Usages），把任何"两个 `_sm` 值进行比较 / 判断"的位置全部记入 P1 文档第二节，**漏一处 = V2 上线某条路径直接失效**。
+
+**⚠️ 写入路径缺失时的处理规则**：  
+对 P1 清单中每个 `xxx_sm` 字段，若以下两种写入来源**均未找到**：
+1. Java 层显式调用 `setXxxSm(...)`
+2. `BeanUtils.copyProperties` 将含 `xxxSm` 的对象 copy 到 PO/DO
+
+则**不得自行假设"无写入路径"或"只读字段跳过"**，须在 P1 影响文档中标记：
+
+```markdown
+| `t_xxx_xxx` | `a_sm` | ⚠️ 未找到写入路径（setXxxSm + BeanUtils 均未命中），需人工确认 |
+```
+
+并在 Phase 1 完成后汇报时，单独列出所有标记项，明确请求用户确认后再继续。
 
 **Phase 1 完成后 STOP**：把影响文档路径报告给用户，明确请求"是否开始 P2 切分支并执行 P3–P6"。**禁止自作主张继续**（对齐 R8 HARD-GATE / R10 执行阶段零自由度）。
 
@@ -147,11 +168,14 @@ implementation 'com.cogolinks:cogo-metric-core:2.4.5-test-SNAPSHOT'
 
 ### 4.1 ALTER SQL
 
-每张表一个文件：`docs/pcihash/<table_name>.sql`
+Alter SQl 文件：`docs/pcihash/<project_name>.sql`
 
 ```sql
-ALTER TABLE `<db>`.`<table>`
+ALTER TABLE `<db>`.`<table1>`
+  ADD COLUMN `xxx_hash` varchar(512) NULL COMMENT 'xxx-hash' AFTER `xxx_sm`,
   ADD COLUMN `xxx_hash` varchar(512) NULL COMMENT 'xxx-hash' AFTER `xxx_sm`;
+ALTER TABLE `<db>`.`<table2>`
+  ADD COLUMN `xxx_hash` varchar(512) NULL COMMENT 'xxx-hash' AFTER `xxx_sm`;  
 ```
 
 多字段在同一文件按顺序列出，每个 `AFTER` 紧跟对应 `_sm`。
@@ -202,6 +226,16 @@ req.setXxxSm(SxfAksUtils.encrypt(req.getXxx()));
 ```
 
 **自检**：所有写入路径（add / batchInsert / updateById / batchUpdate / Job 同步）都要补；没有写入路径的只读表跳过。
+
+> **特别注意 `BeanUtils.copyProperties`**：若 P1 调研中发现某个写入路径是通过 `BeanUtils.copyProperties(src, dest)` 批量赋值的，dest 对象的 `xxxSm` 会被自动填入，但不会有显式的 `setXxxSm` 可以追加 hash。  
+> 此时改造策略：在 `BeanUtils.copyProperties(src, dest)` 调用之后，**紧跟**补写 hash：
+> ```java
+> BeanUtils.copyProperties(src, dest);
+> // 兼容写入：BeanUtils copy 后补 xxx_hash（copy 不会设置 hash，需手动补）
+> if (dest.getXxxSm() != null) {
+>     dest.setXxxHash(QueryDigestUtil.digestFromCipher(dest.getXxxSm()));
+> }
+> ```
 
 ### 4.5 Phase 4 验证（R12）
 
@@ -263,6 +297,7 @@ req.setAccountNoHash(QueryDigestUtil.digestFromPlain(req.getAccountNo()));
 
 > **注意**：不要保留原 `setAccountNoSm(...)`——保留会让 XML 同时拼 `account_no_sm = ?` 和 `account_no_hash = ?` 两个条件，老 SM 密文又匹配不上，直接查空。
 
+
 ### 6.3 Phase 6 验证（R12）
 
 - 全量 `./gradlew compileJava`
@@ -283,6 +318,8 @@ req.setAccountNoHash(QueryDigestUtil.digestFromPlain(req.getAccountNo()));
 | 漏改写入路径 (Job、批量同步) | 历史数据 hash 永远空 | 在 P1 调研阶段穷举所有 `setXxxSm` 调用点 |
 | V2 切完入参后忘记**移除**原 `setXxxSm()` | XML 同时拼 sm 和 hash 两个等值条件 → 老密文不匹配查空 | 见 6.2 "注意" |
 | P4 加 XML hash `<if>` 但忘记给 DTO 加 `xxxHash` 字段 | MyBatis OGNL `xxxHash != null` 抛 "no getter" | 4.3 表格末行强制清单 |
+| `BeanUtils.copyProperties` 写入路径漏补 hash | dest 对象 `xxxHash` 为 null → hash 列空，补刷脚本也无法覆盖 | P1 调研 grep `BeanUtils.copyProperties`，P4.4 在 copy 后紧跟补 hash |
+| `BeanUtils.copyProperties` + `setXxxSm` 均未找到，直接当只读表跳过 | 实际有写入路径未被发现，导致 hash 列永久缺失 | 两种来源均缺失时，P1 文档标记 ⚠️，人工确认后才能继续 |
 
 ## 红色信号 - 立刻停下
 
