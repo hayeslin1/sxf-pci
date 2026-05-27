@@ -15,19 +15,25 @@ SXF PCI 合规 Claude Code 插件，提供 PCI 密钥轮换迁移的完整作业
 | 阶段 | 内容 |
 |------|------|
 | P1 · 调研 | 盘清受影响的 `_sm` 字段、等值比较点、调用链，输出影响文档后 **HARD-GATE** |
-| P2 · 切 V1 分支 | `BR_<DATE>_pci_ask_hash_v1` |
+| P2 · 切 V1 分支 | `BR_2026_pci_ask_hash_v1` |
 | P3 · 升级依赖 | `com.cogolinks:cogo-metric-core:2.4.5-test-SNAPSHOT` |
 | P4 · V1 改造 | 新增 hash 列、补写入逻辑、XML 预留 hash `<if>`（只加不删） |
-| P5 · 切 V2 分支 | 基于 V1：`BR_<DATE>_pci_ask_hash_v2` |
+| P5 · 切 V2 分支 | 基于 V1：`BR_2026_pci_ask_hash_v2` |
 | P6 · V2 改造 | 切等值查询到 hash，移除原 `setXxxSm` 传参 |
 
 ## 安装
 
 ```bash
-claude plugin install /path/to/sxf-pci
+claude plugins  marketplace add hayeslin1/sxf-pci
+claude plugins install  sxf-pci
 ```
 
-或直接将本目录放入 `~/.claude/plugins/` 下。
+## 更新 
+```bash
+claude plugins  update sxf-pci@sxf-pci
+```
+
+
 
 ## 依赖约定
 

@@ -241,7 +241,6 @@ grep -rEn 'BeanUtils\.copyProperties' --include='*.java' -- <repo>
 
 ## 上线节奏（与 SKILL 风险段一致）
 - V1 上线 → 跑历史补刷脚本 → 验证补刷完成 → V2 上线
-```
 
 **plan 写完即停**：plan 写好之后，**禁止自动进入 P2**。
 
@@ -250,16 +249,25 @@ grep -rEn 'BeanUtils\.copyProperties' --include='*.java' -- <repo>
 
 ---
 
+
 ## Phase 2 · 创建 V1 分支
 
 > **模型切换**：从此阶段开始**切换到 Sonnet 模型**。
 > **执行方式**：严格按 P1.2 产出的 plan 执行；P2 是单点动作，由主 Agent 直接执行即可，不必派 subagent。
 
-- 创建新分支，命名：`BR_<YYYYMMDD>_pci_ask_hash_v1`（日期取用户给定或当前日期）。
+- 创建新分支，命名：`BR_2026_pci_ask_hash_v1`（日期取用户给定或当前日期）。
 
 ```bash
-git checkout -b BR_<DATE>_pci_ask_hash_v1
+git checkout -b BR_2026_pci_ask_hash_v1
 ```
+
+- v1改动完成后自动commit 
+
+```bash
+git commit -m "feat: PCI密钥轮换 V1 - 新增 hash列 + 写入兼容"
+``` 
+
+
 
 ---
 
@@ -370,8 +378,8 @@ req.setXxxSm(SxfAksUtils.encrypt(req.getXxx()));
 > **执行方式**：Sonnet + 单点动作，主 Agent 直接执行。
 
 ```bash
-git checkout BR_<DATE>_pci_ask_hash_v1
-git checkout -b BR_<DATE>_pci_ask_hash_v2
+git checkout BR_2026_pci_ask_hash_v1
+git checkout -b BR_2026_pci_ask_hash_v2
 ```
 
 V2 必须基于 V1（不是基于 master），否则会丢掉 hash 列的写入兼容。
